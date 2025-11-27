@@ -54,6 +54,8 @@ def run_tests(
     file_line: Optional[str] = None,
     coverage: bool = False,
     coverage_html: Optional[str] = None,
+    filter_pattern: Optional[str] = None,
+    filter_regex: bool = False,
 ) -> bool:
     """
     Run tests in a PZSpec project.
@@ -64,6 +66,8 @@ def run_tests(
         file_line: Optional "file.py:line" to run a specific test.
         coverage: Whether to collect code coverage.
         coverage_html: Path to generate HTML coverage report.
+        filter_pattern: Optional pattern to filter tests by name (like pytest -k).
+        filter_regex: Whether to treat filter_pattern as a regex.
 
     Returns:
         True if all tests passed, False otherwise.
@@ -170,7 +174,12 @@ def run_tests(
             return False
 
     # Run tests
-    success = runner.run(verbose=verbose, file_line=file_line)
+    success = runner.run(
+        verbose=verbose,
+        file_line=file_line,
+        filter_pattern=filter_pattern,
+        filter_regex=filter_regex,
+    )
 
     # Collect and report coverage
     if coverage and collector and coverage_lib_path:
@@ -221,6 +230,15 @@ Examples:
 
   # Run all tests in a describe block
   pzspec ./pzspec/test_vectors.py:114
+
+  # Filter tests by name pattern
+  pzspec -k "Vec2"              # tests containing "Vec2"
+  pzspec -k "add"               # tests containing "add"
+  pzspec -k "Vec2 and add"      # tests matching both
+  pzspec -k "not slow"          # exclude tests containing "slow"
+
+  # Filter tests using regex
+  pzspec -k "Vec2.*add" --regex
 
   # Run tests with coverage
   pzspec --coverage
@@ -275,6 +293,20 @@ Examples:
         help="Generate HTML coverage report in the specified directory",
     )
 
+    parser.add_argument(
+        "-k",
+        type=str,
+        metavar="PATTERN",
+        help="Filter tests by name pattern. Supports boolean operators: "
+             "'Vec2 and add', 'Vec2 or sub', 'not slow'",
+    )
+
+    parser.add_argument(
+        "--regex",
+        action="store_true",
+        help="Treat -k pattern as a regular expression",
+    )
+
     args = parser.parse_args()
 
     verbose = args.verbose and not args.quiet
@@ -289,6 +321,8 @@ Examples:
         file_line=args.file_line,
         coverage=coverage,
         coverage_html=args.html,
+        filter_pattern=args.k,
+        filter_regex=args.regex,
     )
     sys.exit(0 if success else 1)
 
