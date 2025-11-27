@@ -5,20 +5,119 @@ FFI wrapper for loading and calling Zig functions via C ABI.
 import ctypes
 import os
 import platform
+import re
 from pathlib import Path
-from typing import Any, Callable, Optional
-from .builder import auto_build
+from typing import Any, Callable, Optional, Dict, List
+from .builder import auto_build, ZigBuilder, PZSpecConfig
+
+
+# Mapping from Zig type names to ctypes types
+ZIG_TO_CTYPES: Dict[str, Any] = {
+    # Signed integers
+    "i8": ctypes.c_int8,
+    "i16": ctypes.c_int16,
+    "i32": ctypes.c_int32,
+    "i64": ctypes.c_int64,
+    # Unsigned integers
+    "u8": ctypes.c_uint8,
+    "u16": ctypes.c_uint16,
+    "u32": ctypes.c_uint32,
+    "u64": ctypes.c_uint64,
+    "usize": ctypes.c_size_t,
+    "isize": ctypes.c_ssize_t,
+    # Floats
+    "f32": ctypes.c_float,
+    "f64": ctypes.c_double,
+    # Boolean
+    "bool": ctypes.c_bool,
+    # Void
+    "void": None,
+    # C string (null-terminated)
+    "[*:0]const u8": ctypes.c_char_p,
+    "[*:0]u8": ctypes.c_char_p,
+}
+
+
+def parse_zig_type(type_str: str, struct_registry: Optional[Dict[str, type]] = None) -> Any:
+    """
+    Parse a Zig type string and return the corresponding ctypes type.
+
+    Args:
+        type_str: Zig type string (e.g., "i32", "*const Vec2", "f32")
+        struct_registry: Optional dict mapping struct names to ctypes.Structure classes
+
+    Returns:
+        ctypes type or None for void
+    """
+    type_str = type_str.strip()
+
+    # Check direct mapping first
+    if type_str in ZIG_TO_CTYPES:
+        return ZIG_TO_CTYPES[type_str]
+
+    # Handle pointers
+    if type_str.startswith("*"):
+        # *const T or *T
+        inner = type_str[1:]
+        if inner.startswith("const "):
+            inner = inner[6:]
+        inner_type = parse_zig_type(inner, struct_registry)
+        if inner_type is not None:
+            return ctypes.POINTER(inner_type)
+        return ctypes.c_void_p
+
+    # Handle [*] pointers (many-pointers)
+    if type_str.startswith("[*]"):
+        inner = type_str[3:]
+        if inner.startswith("const "):
+            inner = inner[6:]
+        inner_type = parse_zig_type(inner, struct_registry)
+        if inner_type is not None:
+            return ctypes.POINTER(inner_type)
+        return ctypes.c_void_p
+
+    # Handle optional pointers
+    if type_str.startswith("?*"):
+        inner = type_str[2:]
+        if inner.startswith("const "):
+            inner = inner[6:]
+        inner_type = parse_zig_type(inner, struct_registry)
+        if inner_type is not None:
+            return ctypes.POINTER(inner_type)
+        return ctypes.c_void_p
+
+    # Check struct registry
+    if struct_registry and type_str in struct_registry:
+        return struct_registry[type_str]
+
+    # Try to extract struct name from qualified path (e.g., "vector.Vec2")
+    if "." in type_str:
+        parts = type_str.split(".")
+        struct_name = parts[-1]
+        if struct_registry and struct_name in struct_registry:
+            return struct_registry[struct_name]
+
+    # Unknown type - return void pointer as fallback
+    return ctypes.c_void_p
 
 
 class ZigLibrary:
     """
     Wrapper for loading a Zig shared library and calling its functions.
-    
+
     Automatically detects the correct library extension (.so, .dylib, .dll)
     based on the platform.
+
+    Supports automatic function discovery when the library is built with
+    pzspec_exports.zig, which embeds type metadata.
     """
-    
-    def __init__(self, library_path: Optional[str] = None, auto_build_lib: bool = True):
+
+    def __init__(
+        self,
+        library_path: Optional[str] = None,
+        auto_build_lib: bool = True,
+        struct_registry: Optional[Dict[str, type]] = None,
+    ):
         """
         Initialize the Zig library loader.
 
@@ -26,6 +125,8 @@ class ZigLibrary:
             library_path: Path to the shared library. If None, tries to find
                          it in common build locations or auto-builds it.
             auto_build_lib: If True, automatically build the library if not found.
+            struct_registry: Optional dict mapping struct names to ctypes.Structure
+                           classes. Used for auto-binding functions with struct params.
 
         Environment Variables:
             PZSPEC_COVERAGE_LIB: If set, use this library path (for coverage mode)
@@ -51,17 +152,128 @@ class ZigLibrary:
                             library_path = self._find_library()
                         except FileNotFoundError:
                             pass
-        
+
         if not library_path or not os.path.exists(library_path):
             raise FileNotFoundError(
                 f"Zig library not found. "
                 "Make sure to build the Zig code first, or enable auto-build. "
                 "Expected locations: zig-out/lib/, build/, or project root."
             )
-        
+
         self.lib_path = library_path
         self._lib = ctypes.CDLL(library_path)
-        self._functions = {}
+        self._functions: Dict[str, Callable] = {}
+        self._metadata: Optional[Dict[str, Any]] = None
+        self._struct_registry: Dict[str, type] = struct_registry or {}
+        self._auto_bound: Dict[str, Callable] = {}
+
+        # Try to load metadata
+        self._load_metadata()
+
+    def _load_metadata(self) -> None:
+        """Try to load function metadata from the library or metadata file."""
+        project_root = Path.cwd()
+        builder = ZigBuilder(project_root)
+
+        # Try embedded metadata first (from __pzspec_metadata function)
+        self._metadata = builder.extract_metadata()
+
+        # Fall back to metadata file
+        if not self._metadata:
+            self._metadata = builder.load_metadata()
+
+        # Auto-bind discovered functions
+        if self._metadata and "functions" in self._metadata:
+            self._auto_bind_functions()
+
+    def _auto_bind_functions(self) -> None:
+        """Auto-bind functions from metadata."""
+        if not self._metadata or "functions" not in self._metadata:
+            return
+
+        for func_info in self._metadata["functions"]:
+            name = func_info.get("name", "")
+            params = func_info.get("params", [])
+            return_type = func_info.get("return", "void")
+
+            if not name:
+                continue
+
+            # Parse types
+            argtypes = [
+                parse_zig_type(p, self._struct_registry)
+                for p in params
+            ]
+            restype = parse_zig_type(return_type, self._struct_registry)
+
+            # Create bound function
+            try:
+                func = getattr(self._lib, name)
+                func.argtypes = argtypes
+                func.restype = restype
+                self._auto_bound[name] = func
+            except AttributeError:
+                # Function not found in library
+                pass
+
+    def register_struct(self, name: str, struct_class: type) -> None:
+        """
+        Register a ctypes.Structure class for use in auto-binding.
+
+        Args:
+            name: The Zig struct name (e.g., "Vec2")
+            struct_class: The ctypes.Structure subclass
+        """
+        self._struct_registry[name] = struct_class
+        # Re-bind functions that might use this struct
+        if self._metadata:
+            self._auto_bind_functions()
+
+    def register_structs(self, structs: Dict[str, type]) -> None:
+        """
+        Register multiple ctypes.Structure classes.
+
+        Args:
+            structs: Dict mapping Zig struct names to ctypes.Structure subclasses
+        """
+        self._struct_registry.update(structs)
+        if self._metadata:
+            self._auto_bind_functions()
+
+    def get_discovered_functions(self) -> List[str]:
+        """
+        Get list of auto-discovered function names.
+
+        Returns:
+            List of function names that were auto-discovered from metadata.
+        """
+        return list(self._auto_bound.keys())
+
+    def has_metadata(self) -> bool:
+        """Check if the library has embedded metadata."""
+        return self._metadata is not None
+
+    def __getattr__(self, name: str) -> Callable:
+        """
+        Allow calling auto-discovered functions as attributes.
+
+        Example:
+            zig = ZigLibrary()
+            result = zig.vec2_add(a, b)  # If vec2_add was auto-discovered
+        """
+        # Check auto-bound functions first
+        if name in self._auto_bound:
+            return self._auto_bound[name]
+
+        # Fall back to direct library access (for manually exported functions)
+        if hasattr(self._lib, name):
+            return getattr(self._lib, name)
+
+        raise AttributeError(
+            f"'{type(self).__name__}' object has no attribute '{name}'. "
+            f"Function '{name}' not found in library. "
+            f"Auto-discovered functions: {list(self._auto_bound.keys())}"
+        )
     
     def _find_library(self) -> str:
         """Try to find the library in common build locations."""

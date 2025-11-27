@@ -7,7 +7,8 @@ for Zig code using FFI (Foreign Function Interface).
 
 from .test_runner import TestRunner, TestSuite
 from .zig_ffi import ZigLibrary
-from .builder import ZigBuilder, PZSpecConfig, auto_build
+from .builder import ZigBuilder, PZSpecConfig, auto_build, get_pzspec_exports_path
+from .zig_ffi import parse_zig_type, ZIG_TO_CTYPES
 from .factory import (
     StructFactory,
     factory_field,
@@ -66,6 +67,9 @@ __all__ = [
     "ZigBuilder",
     "PZSpecConfig",
     "auto_build",
+    "get_pzspec_exports_path",
+    "parse_zig_type",
+    "ZIG_TO_CTYPES",
     "StructFactory",
     "factory_field",
     "sequence",
