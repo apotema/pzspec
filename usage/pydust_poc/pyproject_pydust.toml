@@ -1,0 +1,61 @@
+# Example pyproject.toml for using Pydust with PZSpec
+#
+# This shows the additional configuration required when using Ziggy-Pydust
+# instead of the standard ctypes approach.
+#
+# NOTE: This file is named pyproject_pydust.toml to avoid conflicts.
+# In a real project, rename to pyproject.toml and adjust accordingly.
+
+[build-system]
+requires = ["maturin>=1.4,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "vector_math"
+version = "0.1.0"
+description = "Vector math library using Ziggy-Pydust"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pzspec",
+    "pytest",
+]
+
+# Pydust-specific configuration
+[tool.maturin]
+# Pydust build settings
+python-source = "python"
+module-name = "vector_math"
+features = ["pyo3/extension-module"]
+
+# For Zig-based projects
+bindings = "pyo3"
+compatibility = "linux"
+
+[tool.pydust]
+# Pydust-specific settings
+root = "src/vector_pydust.zig"
+# debug_imports = true  # Uncomment for debugging
+
+# Alternative Poetry-based setup (legacy)
+# [tool.poetry]
+# name = "vector_math"
+# version = "0.1.0"
+# 
+# [tool.poetry.dependencies]
+# python = "^3.8"
+# ziggy-pydust = "^0.26.0"
+
+# PZSpec configuration when using Pydust backend
+[tool.pzspec]
+# backend = "pydust"  # Future: opt-in Pydust support
+# pydust_module = "vector_math"
+
+# Current ctypes settings (still work alongside Pydust)
+library_name = "vector_math"
+source_file = "src/vector_pydust.zig"
+optimize = "ReleaseSafe"
+build_dir = "zig-out/lib"
