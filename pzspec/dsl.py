@@ -167,6 +167,35 @@ class Expectation:
             error_msg = msg or f"Expected {expected} ± {delta}, but got {self.actual}"
             raise AssertionError(error_msg)
 
+    def to_match_snapshot(self, name: Optional[str] = None, serializer: Optional[Callable] = None):
+        """
+        Assert that actual matches a saved snapshot.
+
+        On first run, saves the value as the snapshot.
+        On subsequent runs, compares against the saved snapshot.
+
+        Args:
+            name: Optional name for the snapshot (auto-generated if not provided)
+            serializer: Optional custom serializer function
+
+        Usage:
+            expect(result).to_match_snapshot()
+            expect(config).to_match_snapshot("config_v1")
+        """
+        from .snapshot import get_snapshot_manager
+
+        manager = get_snapshot_manager()
+        result = manager.match_snapshot(self.actual, name=name, serializer=serializer)
+
+        if not result.matched:
+            if result.is_new:
+                raise AssertionError(
+                    f"New snapshot '{name or 'auto'}' - run with --update-snapshots to save"
+                )
+            else:
+                error_msg = f"Snapshot mismatch:\n{result.diff}"
+                raise AssertionError(error_msg)
+
 
 def expect(actual: Any) -> Expectation:
     """
