@@ -9,7 +9,7 @@ import os
 import sys
 import argparse
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from .test_runner import TestRunner
 from .dsl import set_runner
@@ -57,6 +57,8 @@ def run_tests(
     filter_pattern: Optional[str] = None,
     filter_regex: bool = False,
     update_snapshots: bool = False,
+    include_tags: Optional[List[str]] = None,
+    exclude_tags: Optional[List[str]] = None,
 ) -> bool:
     """
     Run tests in a PZSpec project.
@@ -70,6 +72,8 @@ def run_tests(
         filter_pattern: Optional pattern to filter tests by name (like pytest -k).
         filter_regex: Whether to treat filter_pattern as a regex.
         update_snapshots: Whether to update snapshots instead of comparing.
+        include_tags: Only run tests with at least one of these tags.
+        exclude_tags: Exclude tests with any of these tags.
 
     Returns:
         True if all tests passed, False otherwise.
@@ -186,6 +190,8 @@ def run_tests(
         file_line=file_line,
         filter_pattern=filter_pattern,
         filter_regex=filter_regex,
+        include_tags=include_tags,
+        exclude_tags=exclude_tags,
     )
 
     # Collect and report coverage
@@ -246,6 +252,12 @@ Examples:
 
   # Filter tests using regex
   pzspec -k "Vec2.*add" --regex
+
+  # Run tests by tag
+  pzspec --tags unit              # run only unit tests
+  pzspec --tags "slow,integration" # run tests with either tag
+  pzspec --exclude-tags slow      # skip slow tests
+  pzspec --tags unit --exclude-tags flaky  # combine filters
 
   # Run tests with coverage
   pzspec --coverage
@@ -323,6 +335,20 @@ Examples:
         help="Update snapshots instead of comparing against them",
     )
 
+    parser.add_argument(
+        "--tags",
+        type=str,
+        metavar="TAGS",
+        help="Only run tests with these tags (comma-separated)",
+    )
+
+    parser.add_argument(
+        "--exclude-tags",
+        type=str,
+        metavar="TAGS",
+        help="Exclude tests with these tags (comma-separated)",
+    )
+
     args = parser.parse_args()
 
     verbose = args.verbose and not args.quiet
@@ -330,6 +356,15 @@ Examples:
 
     # --html implies --coverage
     coverage = args.coverage or args.html is not None
+
+    # Parse tag filters
+    include_tags = None
+    if args.tags:
+        include_tags = [t.strip() for t in args.tags.split(',') if t.strip()]
+
+    exclude_tags = None
+    if args.exclude_tags:
+        exclude_tags = [t.strip() for t in args.exclude_tags.split(',') if t.strip()]
 
     success = run_tests(
         project_root=project_root,
@@ -340,6 +375,8 @@ Examples:
         filter_pattern=args.k,
         filter_regex=args.regex,
         update_snapshots=args.update_snapshots,
+        include_tags=include_tags,
+        exclude_tags=exclude_tags,
     )
     sys.exit(0 if success else 1)
 

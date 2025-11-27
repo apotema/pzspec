@@ -9,7 +9,7 @@ import time
 import inspect
 import os
 import re
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Set
 from dataclasses import dataclass, field
 from contextlib import contextmanager
 
@@ -30,6 +30,7 @@ class TestCase:
     func: Callable
     source_file: Optional[str] = None
     source_line: Optional[int] = None
+    tags: Set[str] = field(default_factory=set)
 
 
 class Context:
@@ -43,19 +44,28 @@ class Context:
     """
 
     def __init__(self, name: str, parent: Optional['Context'] = None,
-                 source_file: Optional[str] = None, source_line: Optional[int] = None):
+                 source_file: Optional[str] = None, source_line: Optional[int] = None,
+                 tags: Optional[Set[str]] = None):
         self.name = name
         self.parent = parent
         self.children: List['Context'] = []
         self.tests: List[TestCase] = []
         self.source_file = source_file
         self.source_line = source_line
+        self.tags: Set[str] = tags or set()
 
         # Hooks
         self.before_all_hooks: List[Callable] = []
         self.after_all_hooks: List[Callable] = []
         self.before_each_hooks: List[Callable] = []
         self.after_each_hooks: List[Callable] = []
+
+    def get_inherited_tags(self) -> Set[str]:
+        """Get all tags including from parent contexts."""
+        tags = set(self.tags)
+        if self.parent:
+            tags.update(self.parent.get_inherited_tags())
+        return tags
 
     @property
     def full_name(self) -> str:
@@ -112,7 +122,7 @@ class TestRunner:
         self.current_suite: Optional[Context] = None
 
     @contextmanager
-    def describe(self, name: str):
+    def describe(self, name: str, tags: Optional[List[str]] = None):
         """
         Context manager for creating a nested test context.
 
@@ -120,6 +130,10 @@ class TestRunner:
             with runner.describe("Math Operations"):
                 with runner.describe("Addition"):
                     runner.add_test("should add", lambda: ...)
+
+            # With tags
+            with runner.describe("Slow Tests", tags=["slow"]):
+                runner.add_test("should work", lambda: ...)
         """
         # Get caller's source location (skip dsl.py and contextlib.py wrappers)
         frame = inspect.currentframe()
@@ -140,7 +154,8 @@ class TestRunner:
                 source_line = caller.f_lineno
 
         context = Context(name=name, parent=self.current_context,
-                         source_file=source_file, source_line=source_line)
+                         source_file=source_file, source_line=source_line,
+                         tags=set(tags) if tags else None)
         self.current_context.children.append(context)
 
         old_context = self.current_context
@@ -156,7 +171,7 @@ class TestRunner:
             self.current_context = old_context
             self.current_suite = old_suite
 
-    def add_test(self, name: str, func: Callable):
+    def add_test(self, name: str, func: Callable, tags: Optional[List[str]] = None):
         """Add a test to the current context."""
         # Get caller's source location
         frame = inspect.currentframe()
@@ -173,7 +188,8 @@ class TestRunner:
 
         self.current_context.tests.append(TestCase(
             name=name, func=func,
-            source_file=source_file, source_line=source_line
+            source_file=source_file, source_line=source_line,
+            tags=set(tags) if tags else set()
         ))
 
     def before_all(self, func: Callable):
@@ -451,15 +467,19 @@ class TestRunner:
         file_line: Optional[str] = None,
         filter_pattern: Optional[str] = None,
         filter_regex: bool = False,
+        include_tags: Optional[List[str]] = None,
+        exclude_tags: Optional[List[str]] = None,
     ) -> bool:
         """
-        Run all collected tests, optionally filtered by file:line or name pattern.
+        Run all collected tests, optionally filtered by file:line, name pattern, or tags.
 
         Args:
             verbose: Whether to print verbose output
             file_line: Optional "file.py:line" string to filter tests
             filter_pattern: Optional pattern to filter tests by name (like pytest -k)
             filter_regex: Whether to treat filter_pattern as a regex
+            include_tags: Only run tests with at least one of these tags
+            exclude_tags: Exclude tests with any of these tags
 
         Returns:
             True if all tests passed, False otherwise
@@ -472,6 +492,24 @@ class TestRunner:
             if not filter_set:
                 print(f"Error: No tests matched pattern '{filter_pattern}'", file=sys.stderr)
                 return False
+
+        # Apply tag filters
+        if include_tags or exclude_tags:
+            tag_filter_set = self._filter_tests_by_tags(include_tags, exclude_tags)
+            if not tag_filter_set:
+                tag_desc = []
+                if include_tags:
+                    tag_desc.append(f"include: {','.join(include_tags)}")
+                if exclude_tags:
+                    tag_desc.append(f"exclude: {','.join(exclude_tags)}")
+                print(f"Error: No tests matched tag filter ({', '.join(tag_desc)})", file=sys.stderr)
+                return False
+
+            # Combine with pattern filter if both are specified
+            if filter_set is not None:
+                filter_set = filter_set & tag_filter_set
+            else:
+                filter_set = tag_filter_set
 
         if file_line:
             # Parse file:line format
@@ -493,7 +531,7 @@ class TestRunner:
                 print(f"Error: No tests found at {file_line}", file=sys.stderr)
                 return False
 
-            # Combine with name pattern filter if both are specified
+            # Combine with existing filter if both are specified
             if filter_set is not None:
                 filter_set = filter_set & line_filter_set
             else:
@@ -607,6 +645,48 @@ class TestRunner:
                 # Match against full test name including context
                 full_name = f"{context.full_name}::{test.name}" if context.full_name else test.name
                 if matcher(full_name):
+                    matching_tests.add(id(test))
+
+            for child in context.children:
+                search(child)
+
+        search(self.root)
+        return matching_tests
+
+    def _filter_tests_by_tags(
+        self,
+        include_tags: Optional[List[str]] = None,
+        exclude_tags: Optional[List[str]] = None
+    ) -> set:
+        """
+        Find tests matching the tag criteria.
+
+        Args:
+            include_tags: Only run tests with at least one of these tags
+            exclude_tags: Exclude tests with any of these tags
+
+        Returns:
+            A set of test IDs (using id()) that match the criteria
+        """
+        include_set = set(include_tags) if include_tags else None
+        exclude_set = set(exclude_tags) if exclude_tags else set()
+
+        matching_tests = set()
+
+        def search(context: Context):
+            # Get inherited tags from context hierarchy
+            context_tags = context.get_inherited_tags()
+
+            for test in context.tests:
+                # Combine test tags with inherited context tags
+                all_tags = test.tags | context_tags
+
+                # Check exclude tags first
+                if exclude_set and (all_tags & exclude_set):
+                    continue  # Skip this test
+
+                # Check include tags
+                if include_set is None or (all_tags & include_set):
                     matching_tests.add(id(test))
 
             for child in context.children:

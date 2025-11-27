@@ -2,7 +2,7 @@
 Domain-Specific Language for writing tests in a readable, expressive way.
 """
 
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, List
 from .test_runner import TestRunner, TestSuite
 
 
@@ -24,30 +24,72 @@ def get_runner() -> TestRunner:
     return _runner
 
 
-def describe(name: str):
+def describe(name: str, tags: Optional[List[str]] = None):
     """
     Create a test suite (describe block).
-    
+
     Usage:
         with describe("Math Operations"):
             it("should add two numbers", lambda: ...)
+
+        # With tags (tags are inherited by all tests in the block)
+        with describe("Slow Tests", tags=["slow", "integration"]):
+            @it("should work")
+            def test_slow():
+                ...
     """
-    return get_runner().describe(name)
+    return get_runner().describe(name, tags=tags)
 
 
-def it(name: str):
+def it(name: str, tags: Optional[List[str]] = None):
     """
     Decorator for defining a test case.
-    
+
     Usage:
         @it("should add two numbers")
         def test_add():
             expect(add(2, 3)).to_equal(5)
+
+        # With tags
+        @it("should handle large dataset", tags=["slow", "integration"])
+        def test_large():
+            ...
     """
     def decorator(func: Callable):
-        get_runner().add_test(name, func)
+        get_runner().add_test(name, func, tags=tags)
         return func
     return decorator
+
+
+# Convenience shortcuts for common tags
+class it_skip:
+    """Mark a test to be skipped."""
+    def __init__(self, name: str):
+        self.name = name
+
+    def __call__(self, func: Callable):
+        get_runner().add_test(self.name, func, tags=["skip"])
+        return func
+
+
+class it_slow:
+    """Mark a test as slow."""
+    def __init__(self, name: str):
+        self.name = name
+
+    def __call__(self, func: Callable):
+        get_runner().add_test(self.name, func, tags=["slow"])
+        return func
+
+
+class it_focus:
+    """Mark a test to be focused (only this test runs)."""
+    def __init__(self, name: str):
+        self.name = name
+
+    def __call__(self, func: Callable):
+        get_runner().add_test(self.name, func, tags=["focus"])
+        return func
 
 
 def test(name: str, func: Optional[Callable] = None):
