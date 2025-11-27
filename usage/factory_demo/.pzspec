@@ -1,0 +1,5 @@
+{
+  "library_name": "factory_demo",
+  "source_file": "src/lib.zig",
+  "optimize": "ReleaseSafe"
+}

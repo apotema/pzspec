@@ -1,0 +1,6 @@
+# Python dependencies for PZSpec
+# No external dependencies required - uses only standard library (ctypes, etc.)
+
+# Optional: For better test output formatting (uncomment if desired)
+# colorama>=0.4.6
+

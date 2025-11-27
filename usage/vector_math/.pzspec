@@ -1,0 +1,7 @@
+{
+  "library_name": "vector_math",
+  "source_file": "src/vector.zig",
+  "optimize": "ReleaseSafe",
+  "build_dir": "zig-out/lib"
+}
+
