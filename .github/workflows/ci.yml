@@ -45,3 +45,7 @@ jobs:
       - name: Run payment_service tests (mocking)
         working-directory: usage/payment_service
         run: pzspec
+
+      - name: Run memory_tracking tests (leak detection)
+        working-directory: usage/memory_tracking
+        run: pzspec

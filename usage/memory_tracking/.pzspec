@@ -1,0 +1,6 @@
+{
+  "library_name": "memory_tracking",
+  "source_file": "src/resources.zig",
+  "optimize": "ReleaseSafe",
+  "build_dir": "zig-out/lib"
+}

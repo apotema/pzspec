@@ -43,6 +43,12 @@ from .mock import (
     get_call_count,
     get_calls,
 )
+from .memory import (
+    track_memory,
+    check_leaks,
+    assert_no_leaks,
+    MemoryLeakError,
+)
 
 # CLI is available but not exported by default
 # Access via: from pzspec.cli import main
@@ -83,6 +89,10 @@ __all__ = [
     "assert_called_with",
     "get_call_count",
     "get_calls",
+    "track_memory",
+    "check_leaks",
+    "assert_no_leaks",
+    "MemoryLeakError",
 ]
 
 __version__ = "0.1.0"
