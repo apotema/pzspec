@@ -36,9 +36,14 @@ pzspec/
 │   ├── builder.py       # ZigBuilder, PZSpecConfig - auto-builds Zig libraries
 │   ├── cli.py           # CLI entry point (pzspec command)
 │   ├── factory.py       # StructFactory - test data factories for ctypes structs
+│   ├── pydust.py        # Ziggy-Pydust integration utilities
+│   ├── zig/             # Zig helper modules
+│   │   └── pzspec_exports.zig  # Comptime helpers for auto-export metadata
 │   └── test_math.py     # Example test file
 └── usage/               # Example projects demonstrating PZSpec usage
-    └── vector_math/     # 2D/3D vector math library example
+    ├── vector_math/     # 2D/3D vector math library example
+    ├── auto_export_demo/ # Auto-discovery with metadata
+    └── pydust_demo/     # Ziggy-Pydust integration example
 ```
 
 ## Key Patterns
@@ -235,3 +240,94 @@ class ErrorCode:
 
 result = zig.get_function("process_data", [ctypes.c_char_p, ctypes.c_size_t], ctypes.c_int32)(data, len(data))
 expect(result).to_equal(ErrorCode.SUCCESS)
+```
+
+## Auto-Discovery with Metadata
+
+When Zig libraries export `__pzspec_metadata`, Python can auto-discover function signatures:
+
+**Zig side (lib.zig):**
+```zig
+// Export metadata JSON with function signatures
+const metadata =
+    \\{"functions":[
+    \\{"name":"add","params":["i32","i32"],"return":"i32"},
+    \\{"name":"multiply","params":["i32","i32"],"return":"i32"}
+    \\]}
+;
+
+export fn __pzspec_metadata() [*:0]const u8 {
+    return metadata;
+}
+```
+
+**Python side:**
+```python
+from pzspec import ZigLibrary
+
+# Auto-discovers functions from metadata
+zig = ZigLibrary()
+
+# Call directly as attributes (types inferred from metadata)
+result = zig.add(10, 20)  # No get_function() needed!
+result = zig.multiply(6, 7)
+
+# Check what was discovered
+print(zig.get_discovered_functions())  # ['add', 'multiply']
+```
+
+## Ziggy-Pydust Integration
+
+For zero-boilerplate FFI, use [Ziggy-Pydust](https://github.com/spiraldb/ziggy-pydust):
+
+**Zig side (no export wrappers needed!):**
+```zig
+const py = @import("pydust");
+
+pub fn add(a: i64, b: i64) i64 {
+    return a + b;
+}
+
+pub const Point = struct {
+    x: f64,
+    y: f64,
+
+    pub fn magnitude(self: Point) f64 {
+        return @sqrt(self.x * self.x + self.y * self.y);
+    }
+};
+
+comptime {
+    py.rootmodule(@This());  // Auto-export everything
+}
+```
+
+**Python side:**
+```python
+import mathlib  # Direct import, no ZigLibrary needed!
+from pzspec import describe, it, expect
+
+with describe("Math"):
+    @it("should add")
+    def test_add():
+        expect(mathlib.add(10, 20)).to_equal(30)
+
+    @it("should calculate magnitude")
+    def test_magnitude():
+        p = mathlib.Point(x=3.0, y=4.0)
+        expect(p.magnitude()).to_equal(5.0)
+```
+
+**PZSpec utilities for Pydust:**
+```python
+from pzspec import try_import_pydust_module, is_pydust_available
+
+# Optional module loading
+mathlib = try_import_pydust_module("mathlib")
+if mathlib:
+    result = mathlib.add(1, 2)
+
+# Check if Pydust is installed
+if is_pydust_available():
+    print("Pydust available")
+```
