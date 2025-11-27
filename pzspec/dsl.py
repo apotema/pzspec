@@ -53,7 +53,7 @@ def it(name: str):
 def test(name: str, func: Optional[Callable] = None):
     """
     Define a test case (alternative syntax).
-    
+
     Usage:
         test("should add two numbers", lambda: expect(add(2, 3)).to_equal(5))
     """
@@ -64,6 +64,71 @@ def test(name: str, func: Optional[Callable] = None):
         return decorator
     else:
         get_runner().add_test(name, func)
+
+
+def before_all(func: Callable):
+    """
+    Decorator to run a function once before all tests in the current context.
+
+    Usage:
+        with describe("Database"):
+            @before_all
+            def setup_db():
+                db.connect()
+    """
+    return get_runner().before_all(func)
+
+
+def after_all(func: Callable):
+    """
+    Decorator to run a function once after all tests in the current context.
+
+    Usage:
+        with describe("Database"):
+            @after_all
+            def teardown_db():
+                db.disconnect()
+    """
+    return get_runner().after_all(func)
+
+
+def before_each(func: Callable):
+    """
+    Decorator to run a function before each test in the current context.
+    Also runs before tests in nested contexts.
+
+    Usage:
+        with describe("User"):
+            @before_each
+            def setup_user():
+                user = User.create()
+    """
+    return get_runner().before_each(func)
+
+
+def after_each(func: Callable):
+    """
+    Decorator to run a function after each test in the current context.
+    Also runs after tests in nested contexts.
+
+    Usage:
+        with describe("User"):
+            @after_each
+            def cleanup():
+                User.delete_all()
+    """
+    return get_runner().after_each(func)
+
+
+# Aliases for convenience
+def before(func: Callable):
+    """Alias for before_each."""
+    return before_each(func)
+
+
+def after(func: Callable):
+    """Alias for after_each."""
+    return after_each(func)
 
 
 class Expectation:
