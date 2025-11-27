@@ -21,13 +21,20 @@ class ZigLibrary:
     def __init__(self, library_path: Optional[str] = None, auto_build_lib: bool = True):
         """
         Initialize the Zig library loader.
-        
+
         Args:
             library_path: Path to the shared library. If None, tries to find
                          it in common build locations or auto-builds it.
             auto_build_lib: If True, automatically build the library if not found.
+
+        Environment Variables:
+            PZSPEC_COVERAGE_LIB: If set, use this library path (for coverage mode)
         """
-        if library_path is None:
+        # Check for coverage library override
+        coverage_lib = os.environ.get('PZSPEC_COVERAGE_LIB')
+        if coverage_lib and os.path.exists(coverage_lib):
+            library_path = coverage_lib
+        elif library_path is None:
             # Try to find library first
             try:
                 library_path = self._find_library()
