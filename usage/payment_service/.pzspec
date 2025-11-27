@@ -1,0 +1,6 @@
+{
+  "library_name": "payment_service",
+  "source_file": "src/payment.zig",
+  "optimize": "ReleaseSafe",
+  "build_dir": "zig-out/lib"
+}

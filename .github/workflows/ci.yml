@@ -41,3 +41,7 @@ jobs:
       - name: Run factory_demo tests
         working-directory: usage/factory_demo
         run: pzspec
+
+      - name: Run payment_service tests (mocking)
+        working-directory: usage/payment_service
+        run: pzspec

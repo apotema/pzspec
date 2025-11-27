@@ -35,6 +35,14 @@ from .dsl import (
     before,
     after,
 )
+from .mock import (
+    mock_zig_function,
+    assert_called,
+    assert_called_once,
+    assert_called_with,
+    get_call_count,
+    get_calls,
+)
 
 # CLI is available but not exported by default
 # Access via: from pzspec.cli import main
@@ -69,6 +77,12 @@ __all__ = [
     "after_each",
     "before",
     "after",
+    "mock_zig_function",
+    "assert_called",
+    "assert_called_once",
+    "assert_called_with",
+    "get_call_count",
+    "get_calls",
 ]
 
 __version__ = "0.1.0"
