@@ -37,8 +37,9 @@ compatibility = "linux"
 
 [tool.pydust]
 # Pydust-specific settings
+# 'root' specifies the main Zig source file that defines the Python module
 root = "src/vector_pydust.zig"
-# debug_imports = true  # Uncomment for debugging
+# debug_imports = true  # Uncomment to debug module import issues
 
 # Alternative Poetry-based setup (legacy)
 # [tool.poetry]
