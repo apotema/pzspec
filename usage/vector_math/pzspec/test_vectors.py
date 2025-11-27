@@ -17,6 +17,10 @@ from pzspec.zig_ffi import ZigLibrary
 from pzspec.dsl import describe, it, expect, assert_almost_equal
 import ctypes
 
+# Add the pzspec directory to the path for factory imports
+pzspec_dir = Path(__file__).parent
+sys.path.insert(0, str(pzspec_dir))
+
 # Import factories from the factories folder
 from factories import Vec2Factory, Vec3Factory
 from factories.vectors import Vec2, Vec3

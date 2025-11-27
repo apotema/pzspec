@@ -19,6 +19,10 @@ sys.path.insert(0, str(project_root))
 from pzspec import ZigLibrary, describe, it, expect, assert_almost_equal
 import ctypes
 
+# Add the pzspec directory to the path for factory imports
+pzspec_dir = Path(__file__).parent
+sys.path.insert(0, str(pzspec_dir))
+
 # Import factories and structs from the factories folder
 from factories import (
     SmallButchery,

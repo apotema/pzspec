@@ -9,7 +9,8 @@
       "Bash(gh repo create:*)",
       "Bash(git push:*)",
       "Bash(gh run list:*)",
-      "Bash(gh run watch:*)"
+      "Bash(gh run watch:*)",
+      "Bash(gh run view:*)"
     ],
     "deny": [],
     "ask": []
