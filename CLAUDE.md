@@ -124,3 +124,114 @@ vecs = Vec2Factory.build_batch(5) # batch creation
 | `[*:0]const u8` | `c_char_p` |
 | `[*]i32` | `POINTER(c_int32)` |
 | `usize` | `c_size_t` |
+
+## Common FFI Patterns
+
+### Sentinel Values (Nullable Types)
+
+When a numeric type needs to represent "no value" (like entity IDs where 0 is valid), use sentinel values:
+
+**Zig side:**
+```zig
+const std = @import("std");
+
+// Define sentinel as max value (can't be a valid entity index)
+pub const NO_ENTITY: u32 = std.math.maxInt(u32);  // 0xFFFFFFFF
+
+// Export for Python
+export fn get_no_entity_sentinel() u32 {
+    return NO_ENTITY;
+}
+
+// Use in functions that may not find an entity
+export fn find_entity(name: [*:0]const u8) u32 {
+    // ... search logic ...
+    return if (found) entity.id else NO_ENTITY;
+}
+```
+
+**Python side:**
+```python
+from pzspec import ZigLibrary, Sentinel, expect, NO_ENTITY
+import ctypes
+
+zig = ZigLibrary()
+
+# Option 1: Use pre-defined sentinel
+# NO_ENTITY is max u32 (0xFFFFFFFF)
+
+# Option 2: Load sentinel from Zig
+NO_ENTITY = Sentinel.from_zig_function(zig, "get_no_entity_sentinel", ctypes.c_uint32)
+
+# Use in tests
+entity_id = zig.get_function("find_entity", [ctypes.c_char_p], ctypes.c_uint32)(b"player")
+
+# Check validity
+if NO_ENTITY.is_valid(entity_id):
+    process_entity(entity_id)
+
+# Use expect() assertions
+expect(entity_id).to_not_be_sentinel(NO_ENTITY)  # Assert found
+expect(entity_id).to_be_valid(NO_ENTITY)         # Alias for above
+expect(missing_id).to_be_sentinel(NO_ENTITY)     # Assert not found
+```
+
+### Optional Results Pattern
+
+For functions that may fail or return nothing:
+
+**Zig side:**
+```zig
+pub const Result = extern struct {
+    value: i32,
+    success: bool,
+};
+
+export fn try_parse(input: [*:0]const u8) Result {
+    // ... parsing logic ...
+    return if (valid)
+        Result{ .value = parsed, .success = true }
+    else
+        Result{ .value = 0, .success = false };
+}
+```
+
+**Python side:**
+```python
+class Result(ctypes.Structure):
+    _fields_ = [("value", ctypes.c_int32), ("success", ctypes.c_bool)]
+
+result = zig.get_function("try_parse", [ctypes.c_char_p], Result)(b"42")
+expect(result.success).to_be_true()
+expect(result.value).to_equal(42)
+```
+
+### Error Code Pattern
+
+For functions that can fail with specific errors:
+
+**Zig side:**
+```zig
+pub const ErrorCode = enum(i32) {
+    Success = 0,
+    NotFound = -1,
+    InvalidInput = -2,
+    OutOfMemory = -3,
+};
+
+export fn process_data(data: [*]const u8, len: usize) i32 {
+    // ... processing ...
+    return @intFromEnum(ErrorCode.Success);
+}
+```
+
+**Python side:**
+```python
+class ErrorCode:
+    SUCCESS = 0
+    NOT_FOUND = -1
+    INVALID_INPUT = -2
+    OUT_OF_MEMORY = -3
+
+result = zig.get_function("process_data", [ctypes.c_char_p, ctypes.c_size_t], ctypes.c_int32)(data, len(data))
+expect(result).to_equal(ErrorCode.SUCCESS)

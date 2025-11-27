@@ -1,0 +1,6 @@
+{
+  "library_name": "ecs_entities",
+  "source_file": "src/entities.zig",
+  "optimize": "ReleaseSafe",
+  "build_dir": "zig-out/lib"
+}
