@@ -60,6 +60,7 @@ def run_tests(
     include_tags: Optional[List[str]] = None,
     exclude_tags: Optional[List[str]] = None,
     junit_xml: Optional[str] = None,
+    check_memory_leaks: bool = False,
 ) -> bool:
     """
     Run tests in a PZSpec project.
@@ -76,6 +77,7 @@ def run_tests(
         include_tags: Only run tests with at least one of these tags.
         exclude_tags: Exclude tests with any of these tags.
         junit_xml: Path to generate JUnit XML report.
+        check_memory_leaks: Whether to check for memory leaks after each test.
 
     Returns:
         True if all tests passed, False otherwise.
@@ -186,6 +188,30 @@ def run_tests(
             print(f"Warning: No test files found in {pzspec_dir}", file=sys.stderr)
             return False
 
+    # Initialize memory tracker if requested
+    memory_tracker = None
+    if check_memory_leaks:
+        try:
+            import ctypes
+            from .memory import init_memory_tracker_from_library
+            from .zig_ffi import ZigLibrary
+
+            # Get the library path
+            zig_lib = ZigLibrary()
+            lib = ctypes.CDLL(zig_lib.lib_path)
+            memory_tracker = init_memory_tracker_from_library(lib)
+
+            if memory_tracker.is_available:
+                if verbose:
+                    print("Memory leak detection enabled")
+                    print()
+            else:
+                print("Warning: Memory tracking not available in Zig library", file=sys.stderr)
+                print("  Add __pzspec_get_allocation_count etc. exports to enable", file=sys.stderr)
+                print()
+        except Exception as e:
+            print(f"Warning: Could not initialize memory tracking: {e}", file=sys.stderr)
+
     # Run tests
     success = runner.run(
         verbose=verbose,
@@ -205,6 +231,18 @@ def run_tests(
         generate_junit_xml(results, junit_xml, suite_name)
         if verbose:
             print(f"JUnit XML report written to: {junit_xml}")
+
+    # Check for memory leaks
+    if memory_tracker and memory_tracker.is_available:
+        from .memory import track_memory, assert_no_leaks
+        leaked_bytes = memory_tracker.get_leaked_bytes()
+        if leaked_bytes > 0:
+            print(f"\nMemory Leak Summary:")
+            print(f"  {leaked_bytes} bytes leaked")
+            print(f"  Run with @check_leaks decorator for per-test tracking")
+            print()
+            if verbose:
+                success = False
 
     # Collect and report coverage
     if coverage and collector and coverage_lib_path:
@@ -285,6 +323,9 @@ Examples:
 
   # Combine JUnit XML with coverage
   pzspec --junit-xml results.xml --coverage
+
+  # Check for memory leaks
+  pzspec --check-leaks
 
   # Run tests in specific project
   pzspec --project-root /path/to/project
@@ -374,6 +415,12 @@ Examples:
         help="Generate JUnit XML report for CI integration",
     )
 
+    parser.add_argument(
+        "--check-leaks",
+        action="store_true",
+        help="Check for memory leaks (requires Zig-side tracking allocator)",
+    )
+
     args = parser.parse_args()
 
     verbose = args.verbose and not args.quiet
@@ -403,6 +450,7 @@ Examples:
         include_tags=include_tags,
         exclude_tags=exclude_tags,
         junit_xml=args.junit_xml,
+        check_memory_leaks=args.check_leaks,
     )
     sys.exit(0 if success else 1)
 
