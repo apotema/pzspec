@@ -56,6 +56,13 @@ from .sentinel import (
     NO_INDEX,
     INVALID_ID,
 )
+from .pydust import (
+    PydustModule,
+    PydustModuleNotFoundError,
+    try_import_pydust_module,
+    is_pydust_available,
+    skip_if_no_pydust,
+)
 
 # CLI is available but not exported by default
 # Access via: from pzspec.cli import main
@@ -107,6 +114,12 @@ __all__ = [
     "NO_ENTITY",
     "NO_INDEX",
     "INVALID_ID",
+    # Pydust integration
+    "PydustModule",
+    "PydustModuleNotFoundError",
+    "try_import_pydust_module",
+    "is_pydust_available",
+    "skip_if_no_pydust",
 ]
 
 __version__ = "0.1.0"
