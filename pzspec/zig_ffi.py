@@ -113,21 +113,31 @@ class ZigLibrary:
     def get_function(self, name: str, argtypes: list, restype: Any) -> Callable:
         """
         Get a function from the Zig library with proper type annotations.
-        
+
         Args:
             name: Function name as exported from Zig
             argtypes: List of ctypes types for arguments
             restype: Return type (ctypes type)
-        
+
         Returns:
             Callable function that can be invoked
+
+        Note:
+            If the function is currently mocked (via mock_zig_function),
+            a mock wrapper is returned instead of the actual function.
         """
+        # Check if function is mocked
+        from .mock import get_mock_registry, MockFunction
+        registry = get_mock_registry()
+        if registry.is_mocked(name):
+            return MockFunction(name, argtypes, restype)
+
         if name not in self._functions:
             func = getattr(self._lib, name)
             func.argtypes = argtypes
             func.restype = restype
             self._functions[name] = func
-        
+
         return self._functions[name]
     
     # Convenience methods for common types
