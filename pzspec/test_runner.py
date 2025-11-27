@@ -371,6 +371,16 @@ class TestRunner:
             error_msg = None
             test_passed = True
 
+            # Set snapshot context for this test
+            try:
+                from .snapshot import get_snapshot_manager
+                snapshot_mgr = get_snapshot_manager()
+                test_file = test.source_file or "unknown"
+                full_test_name = f"{context.full_name}::{test.name}" if context.full_name else test.name
+                snapshot_mgr.set_current_test(test_file, full_test_name)
+            except Exception:
+                pass  # Snapshot manager not initialized, that's ok
+
             try:
                 # Run before_each hooks (parent to child order)
                 for hook in before_hooks:

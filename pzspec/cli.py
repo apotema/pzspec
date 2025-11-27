@@ -56,6 +56,7 @@ def run_tests(
     coverage_html: Optional[str] = None,
     filter_pattern: Optional[str] = None,
     filter_regex: bool = False,
+    update_snapshots: bool = False,
 ) -> bool:
     """
     Run tests in a PZSpec project.
@@ -68,6 +69,7 @@ def run_tests(
         coverage_html: Path to generate HTML coverage report.
         filter_pattern: Optional pattern to filter tests by name (like pytest -k).
         filter_regex: Whether to treat filter_pattern as a regex.
+        update_snapshots: Whether to update snapshots instead of comparing.
 
     Returns:
         True if all tests passed, False otherwise.
@@ -96,6 +98,11 @@ def run_tests(
 
     # Add project root to Python path
     sys.path.insert(0, str(project_root))
+
+    # Initialize snapshot manager
+    from .snapshot import init_snapshot_manager, set_update_snapshots
+    init_snapshot_manager(project_root)
+    set_update_snapshots(update_snapshots)
 
     # Coverage instrumentation
     coverage_builder = None
@@ -246,6 +253,9 @@ Examples:
   # Generate HTML coverage report
   pzspec --coverage --html coverage/
 
+  # Update all snapshots
+  pzspec --update-snapshots
+
   # Run tests in specific project
   pzspec --project-root /path/to/project
 
@@ -307,6 +317,12 @@ Examples:
         help="Treat -k pattern as a regular expression",
     )
 
+    parser.add_argument(
+        "--update-snapshots",
+        action="store_true",
+        help="Update snapshots instead of comparing against them",
+    )
+
     args = parser.parse_args()
 
     verbose = args.verbose and not args.quiet
@@ -323,6 +339,7 @@ Examples:
         coverage_html=args.html,
         filter_pattern=args.k,
         filter_regex=args.regex,
+        update_snapshots=args.update_snapshots,
     )
     sys.exit(0 if success else 1)
 
