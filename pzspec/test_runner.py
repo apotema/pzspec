@@ -8,6 +8,7 @@ import sys
 import time
 import inspect
 import os
+import re
 from typing import Callable, List, Optional
 from dataclasses import dataclass, field
 from contextlib import contextmanager
@@ -434,18 +435,33 @@ class TestRunner:
 
         return passed, failed
 
-    def run(self, verbose: bool = True, file_line: Optional[str] = None) -> bool:
+    def run(
+        self,
+        verbose: bool = True,
+        file_line: Optional[str] = None,
+        filter_pattern: Optional[str] = None,
+        filter_regex: bool = False,
+    ) -> bool:
         """
-        Run all collected tests, optionally filtered by file:line.
+        Run all collected tests, optionally filtered by file:line or name pattern.
 
         Args:
             verbose: Whether to print verbose output
             file_line: Optional "file.py:line" string to filter tests
+            filter_pattern: Optional pattern to filter tests by name (like pytest -k)
+            filter_regex: Whether to treat filter_pattern as a regex
 
         Returns:
             True if all tests passed, False otherwise
         """
         filter_set = None
+
+        # Apply name pattern filter first
+        if filter_pattern:
+            filter_set = self._filter_tests_by_pattern(filter_pattern, filter_regex)
+            if not filter_set:
+                print(f"Error: No tests matched pattern '{filter_pattern}'", file=sys.stderr)
+                return False
 
         if file_line:
             # Parse file:line format
@@ -461,11 +477,17 @@ class TestRunner:
                 print(f"Error: Expected format 'file.py:line', got '{file_line}'", file=sys.stderr)
                 return False
 
-            filter_set = self._find_tests_at_line(target_file, target_line)
+            line_filter_set = self._find_tests_at_line(target_file, target_line)
 
-            if not filter_set:
+            if not line_filter_set:
                 print(f"Error: No tests found at {file_line}", file=sys.stderr)
                 return False
+
+            # Combine with name pattern filter if both are specified
+            if filter_set is not None:
+                filter_set = filter_set & line_filter_set
+            else:
+                filter_set = line_filter_set
 
         total_tests = self._count_tests(self.root, filter_set)
 
@@ -489,3 +511,96 @@ class TestRunner:
     def get_results(self) -> List[TestResult]:
         """Get all test results."""
         return self.results
+
+    def _parse_filter_pattern(self, pattern: str) -> Callable[[str], bool]:
+        """
+        Parse a filter pattern string and return a matcher function.
+
+        Supports:
+        - Simple substring matching: "Vec2" matches any test containing "Vec2"
+        - Boolean operators: "Vec2 and add", "Vec2 or sub", "not slow"
+        - Combinations: "Vec2 and not slow"
+        - Regex mode (when use_regex=True): "Vec2.*add"
+
+        Args:
+            pattern: The filter pattern string
+
+        Returns:
+            A function that takes a test name and returns True if it matches
+        """
+        pattern = pattern.strip()
+
+        # Handle boolean operators (case-insensitive)
+        lower_pattern = pattern.lower()
+
+        # Split on " and " first (highest precedence after grouping)
+        if " and " in lower_pattern:
+            parts = re.split(r'\s+and\s+', pattern, flags=re.IGNORECASE)
+            matchers = [self._parse_filter_pattern(p) for p in parts]
+            return lambda name: all(m(name) for m in matchers)
+
+        # Split on " or "
+        if " or " in lower_pattern:
+            parts = re.split(r'\s+or\s+', pattern, flags=re.IGNORECASE)
+            matchers = [self._parse_filter_pattern(p) for p in parts]
+            return lambda name: any(m(name) for m in matchers)
+
+        # Handle "not " prefix
+        if lower_pattern.startswith("not "):
+            inner_pattern = pattern[4:].strip()
+            inner_matcher = self._parse_filter_pattern(inner_pattern)
+            return lambda name: not inner_matcher(name)
+
+        # Simple case-insensitive substring match
+        return lambda name: pattern.lower() in name.lower()
+
+    def _parse_regex_pattern(self, pattern: str) -> Callable[[str], bool]:
+        """
+        Parse a regex pattern and return a matcher function.
+
+        Args:
+            pattern: The regex pattern string
+
+        Returns:
+            A function that takes a test name and returns True if it matches
+        """
+        try:
+            regex = re.compile(pattern, re.IGNORECASE)
+            return lambda name: regex.search(name) is not None
+        except re.error as e:
+            print(f"Warning: Invalid regex pattern '{pattern}': {e}", file=sys.stderr)
+            # Fall back to literal match
+            return lambda name: pattern.lower() in name.lower()
+
+    def _filter_tests_by_pattern(
+        self, pattern: str, use_regex: bool = False
+    ) -> set:
+        """
+        Find tests matching a name pattern.
+
+        Args:
+            pattern: The filter pattern
+            use_regex: Whether to use regex matching
+
+        Returns:
+            A set of test IDs (using id()) that match the pattern
+        """
+        if use_regex:
+            matcher = self._parse_regex_pattern(pattern)
+        else:
+            matcher = self._parse_filter_pattern(pattern)
+
+        matching_tests = set()
+
+        def search(context: Context):
+            for test in context.tests:
+                # Match against full test name including context
+                full_name = f"{context.full_name}::{test.name}" if context.full_name else test.name
+                if matcher(full_name):
+                    matching_tests.add(id(test))
+
+            for child in context.children:
+                search(child)
+
+        search(self.root)
+        return matching_tests
