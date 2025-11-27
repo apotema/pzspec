@@ -1,0 +1,4 @@
+[pzspec]
+library_name = calculator
+build_dir = zig-out/lib
+auto_build = true
