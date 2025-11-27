@@ -59,6 +59,7 @@ def run_tests(
     update_snapshots: bool = False,
     include_tags: Optional[List[str]] = None,
     exclude_tags: Optional[List[str]] = None,
+    junit_xml: Optional[str] = None,
 ) -> bool:
     """
     Run tests in a PZSpec project.
@@ -74,6 +75,7 @@ def run_tests(
         update_snapshots: Whether to update snapshots instead of comparing.
         include_tags: Only run tests with at least one of these tags.
         exclude_tags: Exclude tests with any of these tags.
+        junit_xml: Path to generate JUnit XML report.
 
     Returns:
         True if all tests passed, False otherwise.
@@ -194,6 +196,16 @@ def run_tests(
         exclude_tags=exclude_tags,
     )
 
+    # Generate JUnit XML report if requested
+    if junit_xml:
+        from .junit_report import generate_junit_xml
+        results = runner.get_results()
+        # Determine suite name from project root
+        suite_name = project_root.name if project_root else "pzspec"
+        generate_junit_xml(results, junit_xml, suite_name)
+        if verbose:
+            print(f"JUnit XML report written to: {junit_xml}")
+
     # Collect and report coverage
     if coverage and collector and coverage_lib_path:
         try:
@@ -259,6 +271,9 @@ Examples:
   pzspec --exclude-tags slow      # skip slow tests
   pzspec --tags unit --exclude-tags flaky  # combine filters
 
+  # Generate JUnit XML report for CI
+  pzspec --junit-xml results.xml
+
   # Run tests with coverage
   pzspec --coverage
 
@@ -267,6 +282,9 @@ Examples:
 
   # Update all snapshots
   pzspec --update-snapshots
+
+  # Combine JUnit XML with coverage
+  pzspec --junit-xml results.xml --coverage
 
   # Run tests in specific project
   pzspec --project-root /path/to/project
@@ -349,6 +367,13 @@ Examples:
         help="Exclude tests with these tags (comma-separated)",
     )
 
+    parser.add_argument(
+        "--junit-xml",
+        type=str,
+        metavar="FILE",
+        help="Generate JUnit XML report for CI integration",
+    )
+
     args = parser.parse_args()
 
     verbose = args.verbose and not args.quiet
@@ -377,6 +402,7 @@ Examples:
         update_snapshots=args.update_snapshots,
         include_tags=include_tags,
         exclude_tags=exclude_tags,
+        junit_xml=args.junit_xml,
     )
     sys.exit(0 if success else 1)
 
