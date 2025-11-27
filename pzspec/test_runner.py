@@ -6,6 +6,8 @@ Supports nested describe blocks with before/after hooks like RSpec.
 
 import sys
 import time
+import inspect
+import os
 from typing import Callable, List, Optional
 from dataclasses import dataclass, field
 from contextlib import contextmanager
@@ -25,6 +27,8 @@ class TestCase:
     """A single test case."""
     name: str
     func: Callable
+    source_file: Optional[str] = None
+    source_line: Optional[int] = None
 
 
 class Context:
@@ -37,11 +41,14 @@ class Context:
     - before(:all) / after(:all) hooks - run once per context
     """
 
-    def __init__(self, name: str, parent: Optional['Context'] = None):
+    def __init__(self, name: str, parent: Optional['Context'] = None,
+                 source_file: Optional[str] = None, source_line: Optional[int] = None):
         self.name = name
         self.parent = parent
         self.children: List['Context'] = []
         self.tests: List[TestCase] = []
+        self.source_file = source_file
+        self.source_line = source_line
 
         # Hooks
         self.before_all_hooks: List[Callable] = []
@@ -113,7 +120,26 @@ class TestRunner:
                 with runner.describe("Addition"):
                     runner.add_test("should add", lambda: ...)
         """
-        context = Context(name=name, parent=self.current_context)
+        # Get caller's source location (skip dsl.py and contextlib.py wrappers)
+        frame = inspect.currentframe()
+        source_file = None
+        source_line = None
+        if frame and frame.f_back:
+            caller = frame.f_back
+            # Walk up the stack to find the actual test file
+            while caller:
+                filename = caller.f_code.co_filename
+                if not (filename.endswith('dsl.py') or
+                        filename.endswith('contextlib.py') or
+                        filename.endswith('test_runner.py')):
+                    break
+                caller = caller.f_back
+            if caller:
+                source_file = caller.f_code.co_filename
+                source_line = caller.f_lineno
+
+        context = Context(name=name, parent=self.current_context,
+                         source_file=source_file, source_line=source_line)
         self.current_context.children.append(context)
 
         old_context = self.current_context
@@ -131,7 +157,23 @@ class TestRunner:
 
     def add_test(self, name: str, func: Callable):
         """Add a test to the current context."""
-        self.current_context.tests.append(TestCase(name=name, func=func))
+        # Get caller's source location
+        frame = inspect.currentframe()
+        source_file = None
+        source_line = None
+        if frame and frame.f_back:
+            caller = frame.f_back
+            # Walk up the stack to find the actual test file (skip dsl.py wrapper)
+            while caller and caller.f_code.co_filename.endswith('dsl.py'):
+                caller = caller.f_back
+            if caller:
+                source_file = caller.f_code.co_filename
+                source_line = caller.f_lineno
+
+        self.current_context.tests.append(TestCase(
+            name=name, func=func,
+            source_file=source_file, source_line=source_line
+        ))
 
     def before_all(self, func: Callable):
         """Add a before(:all) hook to run once before all tests in context."""
@@ -162,16 +204,131 @@ class TestRunner:
         """Alias for after_each."""
         return self.after_each(func)
 
-    def _count_tests(self, context: Context) -> int:
+    def _count_tests(self, context: Context, filter_set: Optional[set] = None) -> int:
         """Count total tests in a context and its children."""
-        count = len(context.tests)
+        if filter_set is not None:
+            count = sum(1 for t in context.tests if id(t) in filter_set)
+        else:
+            count = len(context.tests)
         for child in context.children:
-            count += self._count_tests(child)
+            count += self._count_tests(child, filter_set)
         return count
 
-    def _run_context(self, context: Context, verbose: bool, indent: int = 0) -> tuple:
+    def _normalize_path(self, path: str) -> str:
+        """Normalize a file path for comparison."""
+        return os.path.normpath(os.path.abspath(path))
+
+    def _find_tests_at_line(self, target_file: str, target_line: int) -> set:
+        """
+        Find tests that match a file:line specification.
+
+        Returns a set of test IDs (using id()) that should be run.
+        The matching logic:
+        1. If line points to a specific test (or within a test), run just that test
+        2. If line points to a describe block, run all tests in that block
+        3. If line is within a describe block but before any test, run all tests in that block
+        """
+        target_file = self._normalize_path(target_file)
+        matching_tests = set()
+
+        # Collect all tests with their line info
+        all_tests = []
+
+        def collect_tests(context: Context):
+            context_file = self._normalize_path(context.source_file) if context.source_file else None
+
+            # Check if this context's describe line matches exactly
+            if context_file == target_file and context.source_line == target_line:
+                # Line points to describe block - run all tests in it
+                self._add_all_tests_in_context(context, matching_tests)
+                return True
+
+            for test in context.tests:
+                test_file = self._normalize_path(test.source_file) if test.source_file else None
+                if test_file == target_file:
+                    all_tests.append((test.source_line, test, context))
+
+            for child in context.children:
+                if collect_tests(child):
+                    return True  # Found exact describe match
+
+            return False
+
+        if collect_tests(self.root):
+            return matching_tests
+
+        # Sort tests by line number
+        all_tests.sort(key=lambda x: x[0] if x[0] else 0)
+
+        # Find the test that contains the target line
+        # A test "contains" a line if the line is >= test's start line and < next test's start line
+        best_test = None
+        for i, (line, test, context) in enumerate(all_tests):
+            if line is None:
+                continue
+            if line <= target_line:
+                # Check if this is the right test (target_line is before the next test)
+                if i + 1 < len(all_tests):
+                    next_line = all_tests[i + 1][0]
+                    if next_line and target_line < next_line:
+                        best_test = test
+                        break
+                else:
+                    # Last test - target line is after this test's start
+                    best_test = test
+                    break
+            elif line > target_line and best_test is None:
+                # Target line is before the first test in this file
+                break
+
+        if best_test:
+            matching_tests.add(id(best_test))
+            return matching_tests
+
+        # If no test match, find the innermost context containing the line
+        innermost = self._find_innermost_context_at_line(target_file, target_line)
+        if innermost:
+            self._add_all_tests_in_context(innermost, matching_tests)
+
+        return matching_tests
+
+    def _find_innermost_context_at_line(self, target_file: str, target_line: int) -> Optional[Context]:
+        """Find the innermost context that contains the target line."""
+        target_file = self._normalize_path(target_file)
+        best_match = None
+        best_line = -1
+
+        def search(context: Context):
+            nonlocal best_match, best_line
+            context_file = self._normalize_path(context.source_file) if context.source_file else None
+
+            if (context_file == target_file and
+                context.source_line is not None and
+                context.source_line <= target_line and
+                context.source_line > best_line):
+                best_match = context
+                best_line = context.source_line
+
+            for child in context.children:
+                search(child)
+
+        search(self.root)
+        return best_match
+
+    def _add_all_tests_in_context(self, context: Context, test_set: set):
+        """Add all tests in a context and its children to the set."""
+        for test in context.tests:
+            test_set.add(id(test))
+        for child in context.children:
+            self._add_all_tests_in_context(child, test_set)
+
+    def _run_context(self, context: Context, verbose: bool, indent: int = 0,
+                     filter_set: Optional[set] = None) -> tuple:
         """
         Run all tests in a context and its children.
+
+        Args:
+            filter_set: If provided, only run tests whose id() is in this set
 
         Returns:
             (passed_count, failed_count)
@@ -179,6 +336,11 @@ class TestRunner:
         passed = 0
         failed = 0
         prefix = "  " * indent
+
+        # Check if this context has any tests to run (considering filter)
+        has_tests_to_run = self._count_tests(context, filter_set) > 0
+        if not has_tests_to_run:
+            return passed, failed
 
         # Print context name if it has one
         if context.name and verbose:
@@ -198,7 +360,12 @@ class TestRunner:
         before_hooks = context.get_before_each_hooks()
         after_hooks = context.get_after_each_hooks()
 
-        for test in context.tests:
+        # Filter tests if filter_set is provided
+        tests_to_run = context.tests
+        if filter_set is not None:
+            tests_to_run = [t for t in context.tests if id(t) in filter_set]
+
+        for test in tests_to_run:
             start_time = time.time()
             error_msg = None
             test_passed = True
@@ -249,7 +416,7 @@ class TestRunner:
         # Run child contexts
         for child in context.children:
             child_passed, child_failed = self._run_context(
-                child, verbose, indent + 1
+                child, verbose, indent + 1, filter_set
             )
             passed += child_passed
             failed += child_failed
@@ -267,21 +434,50 @@ class TestRunner:
 
         return passed, failed
 
-    def run(self, verbose: bool = True) -> bool:
+    def run(self, verbose: bool = True, file_line: Optional[str] = None) -> bool:
         """
-        Run all collected tests.
+        Run all collected tests, optionally filtered by file:line.
+
+        Args:
+            verbose: Whether to print verbose output
+            file_line: Optional "file.py:line" string to filter tests
 
         Returns:
             True if all tests passed, False otherwise
         """
-        total_tests = self._count_tests(self.root)
+        filter_set = None
+
+        if file_line:
+            # Parse file:line format
+            if ':' in file_line:
+                parts = file_line.rsplit(':', 1)
+                target_file = parts[0]
+                try:
+                    target_line = int(parts[1])
+                except ValueError:
+                    print(f"Error: Invalid line number in '{file_line}'", file=sys.stderr)
+                    return False
+            else:
+                print(f"Error: Expected format 'file.py:line', got '{file_line}'", file=sys.stderr)
+                return False
+
+            filter_set = self._find_tests_at_line(target_file, target_line)
+
+            if not filter_set:
+                print(f"Error: No tests found at {file_line}", file=sys.stderr)
+                return False
+
+        total_tests = self._count_tests(self.root, filter_set)
 
         if verbose:
             print(f"\n{'='*60}")
-            print(f"Running {total_tests} test(s)")
+            if file_line:
+                print(f"Running {total_tests} test(s) from {file_line}")
+            else:
+                print(f"Running {total_tests} test(s)")
             print(f"{'='*60}\n")
 
-        passed, failed = self._run_context(self.root, verbose)
+        passed, failed = self._run_context(self.root, verbose, filter_set=filter_set)
 
         if verbose:
             print(f"{'='*60}")
