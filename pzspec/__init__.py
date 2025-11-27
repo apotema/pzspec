@@ -49,6 +49,12 @@ from .memory import (
     assert_no_leaks,
     MemoryLeakError,
 )
+from .sentinel import (
+    Sentinel,
+    NO_ENTITY,
+    NO_INDEX,
+    INVALID_ID,
+)
 
 # CLI is available but not exported by default
 # Access via: from pzspec.cli import main
@@ -93,6 +99,10 @@ __all__ = [
     "check_leaks",
     "assert_no_leaks",
     "MemoryLeakError",
+    "Sentinel",
+    "NO_ENTITY",
+    "NO_INDEX",
+    "INVALID_ID",
 ]
 
 __version__ = "0.1.0"

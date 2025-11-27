@@ -49,3 +49,7 @@ jobs:
       - name: Run memory_tracking tests (leak detection)
         working-directory: usage/memory_tracking
         run: pzspec
+
+      - name: Run ecs_entities tests (sentinel values)
+        working-directory: usage/ecs_entities
+        run: pzspec
