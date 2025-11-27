@@ -1,5 +1,10 @@
 # PZSpec - Python DSL for Testing Zig Code
 
+[![PyPI version](https://badge.fury.io/py/pzspec.svg)](https://badge.fury.io/py/pzspec)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/apotema/pzspec/actions/workflows/ci.yml/badge.svg)](https://github.com/apotema/pzspec/actions/workflows/ci.yml)
+
 A Domain-Specific Language built in Python for writing concise, readable tests for Zig code using FFI (Foreign Function Interface).
 
 ## Overview
@@ -62,23 +67,20 @@ The library will be automatically built when you run tests if it doesn't exist.
 
 ### Install PZSpec
 
-**Option 1: Install globally (Recommended)**
+**Option 1: Install from PyPI (Recommended)**
+```bash
+pip install pzspec
+```
+
+**Option 2: Install from source**
 ```bash
 pip install -e .
-# or for production:
-# pip install pzspec
 ```
 
 After installation, use the `pzspec` command from any directory:
 ```bash
 cd your-project
 pzspec  # Automatically finds and runs tests
-```
-
-**Option 2: Use without installation**
-Just run tests directly from the PZSpec project directory:
-```bash
-python run_tests.py
 ```
 
 ## Writing Tests
