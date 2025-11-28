@@ -9,7 +9,6 @@ Ziggy-Pydust is a framework for writing Python extension modules in Zig. Unlike 
 - **Eliminates manual C ABI wrappers** - No `export fn` needed
 - **Automatic type conversion** - Python objects ↔ Zig types
 - **Native Python modules** - Direct import, no ctypes
-- **Struct methods** - Zig struct methods become Python methods
 
 ## Comparison
 
@@ -19,24 +18,17 @@ Ziggy-Pydust is a framework for writing Python extension modules in Zig. Unlike 
 import ctypes
 from pzspec import ZigLibrary
 
-class Point(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_float), ("y", ctypes.c_float)]
-
 zig = ZigLibrary()
 
 # Manual type declaration for each function
-func = zig.get_function("point_distance",
-    [ctypes.POINTER(Point), ctypes.POINTER(Point)],
-    ctypes.c_float)
-
-# Need byref() for pointer parameters
-result = func(ctypes.byref(p1), ctypes.byref(p2))
+add = zig.get_function("add", [ctypes.c_int64, ctypes.c_int64], ctypes.c_int64)
+result = add(10, 20)
 ```
 
 ```zig
-// Need explicit export wrappers
-export fn point_distance(p1: *const Point, p2: *const Point) f32 {
-    return p1.distance_to(p2.*);
+// Need explicit export wrappers with C calling convention
+export fn add(a: i64, b: i64) i64 {
+    return a + b;
 }
 ```
 
@@ -46,17 +38,13 @@ export fn point_distance(p1: *const Point, p2: *const Point) f32 {
 import mathlib  # Direct import!
 
 # No type declarations needed
-result = mathlib.point_distance(p1, p2)
-
-# Struct methods work too
-p = mathlib.point_new(3.0, 4.0)
-magnitude = p.magnitude()
+result = mathlib.add(10, 20)
 ```
 
 ```zig
-// No export wrappers - just regular Zig code
-pub fn point_distance(p1: Point, p2: Point) f64 {
-    return p1.distance_to(p2);
+// No export wrappers - just regular Zig code with struct args
+pub fn add(args: struct { a: i64, b: i64 }) i64 {
+    return args.a + args.b;
 }
 
 comptime {
@@ -66,15 +54,53 @@ comptime {
 
 ## Setup
 
-1. Install Poetry if not already installed
-2. Run `poetry install` to build the Zig module
-3. Run tests: `poetry run python test_pydust_mathlib.py`
+1. Create a virtual environment:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+2. Install dependencies:
+   ```bash
+   pip install ziggy-pydust==0.26.0
+   pip install -e ../..  # Install pzspec from parent
+   ```
+
+3. Copy the ffi.h file for translate-c:
+   ```bash
+   mkdir -p pydust/src
+   cp .venv/lib/python*/site-packages/pydust/src/ffi.h pydust/src/
+   ```
+
+4. Build the Zig module:
+   ```bash
+   python3 build.py
+   ```
+
+5. Run tests:
+   ```bash
+   python3 test_pydust_mathlib.py
+   ```
 
 ## Requirements
 
 - Python 3.11+
-- Zig 0.15.1 (installed automatically by ziggy-pydust)
-- Poetry
+- Zig 0.15.1 (must be available in PATH - use `zvm use 0.15.1` if using zvm)
+- ziggy-pydust 0.26.0
+
+## Configuration
+
+The `pyproject.toml` contains Pydust configuration:
+
+```toml
+[tool.pydust]
+zig_exe = "~/.zvm/bin/zig"  # Optional: path to Zig executable
+
+[[tool.pydust.ext_module]]
+name = "mathlib"
+root = "src/mathlib.zig"
+limited_api = true
+```
 
 ## When to Use Pydust vs Traditional FFI
 
@@ -82,11 +108,9 @@ comptime {
 - Building Python packages with Zig backends
 - You want the cleanest Python API possible
 - You need automatic type conversion
-- Using Poetry as your build system
 
 **Use Traditional FFI when:**
 - Testing existing Zig libraries without modification
-- You can't add Poetry as a dependency
 - You need fine-grained control over memory layout
 - Working with existing C ABI conventions
 
@@ -94,5 +118,5 @@ comptime {
 
 - `src/mathlib.zig` - Zig module using Pydust
 - `test_pydust_mathlib.py` - PZSpec tests
-- `pyproject.toml` - Poetry + Pydust configuration
+- `pyproject.toml` - Pydust configuration
 - `build.py` - Pydust build script

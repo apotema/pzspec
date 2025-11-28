@@ -13,11 +13,14 @@ ziggy-pydust = "^0.26.0"
 pzspec = { path = "../..", develop = true }
 
 [build-system]
-requires = ["poetry-core", "ziggy-pydust"]
+requires = ["poetry-core", "ziggy-pydust==0.26.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.pydust]
+zig_exe = "~/.zvm/bin/zig"
+
 # Define the Zig modules to build
-[[tool.pydust.modules]]
+[[tool.pydust.ext_module]]
 name = "mathlib"
 root = "src/mathlib.zig"
+limited_api = true

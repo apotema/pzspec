@@ -4,16 +4,23 @@ PZSpec tests for Pydust-based math library.
 This demonstrates testing Zig code exposed via Ziggy-Pydust.
 Note: No ctypes, no manual type declarations, no C ABI wrappers needed!
 The Zig code is directly callable as a Python module.
+
+Usage:
+    # Build the module first
+    python3 build.py
+
+    # Run tests
+    python3 test_pydust_mathlib.py
 """
 
-# Import the Pydust-built module directly (after poetry install)
+# Import the Pydust-built module directly (after python3 build.py)
 # This replaces ZigLibrary entirely for Pydust projects
 try:
     import mathlib
     PYDUST_AVAILABLE = True
 except ImportError:
     PYDUST_AVAILABLE = False
-    print("Warning: mathlib not built. Run 'poetry install' first.")
+    print("Warning: mathlib not built. Run 'python3 build.py' first.")
 
 from pzspec import describe, it, expect, it_skip
 
@@ -25,6 +32,11 @@ with describe("Pydust Math Functions"):
         # Direct function call - no get_function, no ctypes!
         result = mathlib.add(10, 20)
         expect(result).to_equal(30)
+
+        # Multiple test cases
+        expect(mathlib.add(0, 0)).to_equal(0)
+        expect(mathlib.add(-5, 5)).to_equal(0)
+        expect(mathlib.add(100, 200)).to_equal(300)
 
     @it("should multiply two integers") if PYDUST_AVAILABLE else it_skip("mathlib not built")
     def test_multiply():
@@ -54,56 +66,37 @@ with describe("Pydust Math Functions"):
         expect(mathlib.fibonacci(20)).to_equal(6765)
 
 
-with describe("Pydust Point Struct"):
-
-    @it("should create a point") if PYDUST_AVAILABLE else it_skip("mathlib not built")
-    def test_point_new():
-        # Pydust returns a proper Python object, not a ctypes struct
-        p = mathlib.point_new(3.0, 4.0)
-        expect(p.x).to_equal(3.0)
-        expect(p.y).to_equal(4.0)
-
-    @it("should calculate point magnitude") if PYDUST_AVAILABLE else it_skip("mathlib not built")
-    def test_point_magnitude():
-        p = mathlib.point_new(3.0, 4.0)
-        expect(p.magnitude()).to_equal(5.0)
-
-    @it("should calculate distance between points") if PYDUST_AVAILABLE else it_skip("mathlib not built")
-    def test_point_distance():
-        p1 = mathlib.point_new(0.0, 0.0)
-        p2 = mathlib.point_new(3.0, 4.0)
-        # Note: No ctypes.byref() needed - Pydust handles object passing
-        distance = mathlib.point_distance(p1, p2)
-        expect(distance).to_equal(5.0)
-
-
-with describe("Pydust String Handling"):
-
-    @it("should greet by name") if PYDUST_AVAILABLE else it_skip("mathlib not built")
-    def test_greet():
-        # Pydust converts Python str <-> Zig []const u8 automatically
-        result = mathlib.greet("World")
-        expect(result).to_equal("Hello, World!")
+# Run tests when executed directly
+if __name__ == "__main__":
+    from pzspec.dsl import get_runner
+    import sys
+    runner = get_runner()
+    success = runner.run()
+    sys.exit(0 if success else 1)
 
 
 # Comparison with traditional ctypes approach:
 #
 # Traditional (ZigLibrary + ctypes):
-#   class Point(ctypes.Structure):
-#       _fields_ = [("x", ctypes.c_float), ("y", ctypes.c_float)]
-#
 #   zig = ZigLibrary()
-#   func = zig.get_function("point_distance", [POINTER(Point), POINTER(Point)], c_float)
-#   result = func(ctypes.byref(p1), ctypes.byref(p2))
+#   add = zig.get_function("add", [ctypes.c_int64, ctypes.c_int64], ctypes.c_int64)
+#   result = add(10, 20)
 #
 # With Pydust:
 #   import mathlib
-#   result = mathlib.point_distance(p1, p2)
+#   result = mathlib.add(10, 20)
+#
+# Zig code comparison:
+#
+# Traditional (explicit C ABI export):
+#   export fn add(a: i64, b: i64) i64 { return a + b; }
+#
+# With Pydust (automatic Python bindings):
+#   pub fn add(args: struct { a: i64, b: i64 }) i64 { return args.a + args.b; }
 #
 # Benefits:
 # - No ctypes boilerplate
 # - No manual type declarations
-# - No byref() for pointers
-# - Native Python objects instead of ctypes structs
+# - Keyword arguments support
 # - IDE autocompletion works
 # - Type safety at compile time (Zig side)
