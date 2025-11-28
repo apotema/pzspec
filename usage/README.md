@@ -27,6 +27,28 @@ pzspec  # No run_tests.py needed!
 
 See `vector_math/README.md` for detailed documentation.
 
+### pydust_poc
+
+**Proof-of-concept evaluation of Ziggy-Pydust as an alternative FFI backend.**
+
+This directory contains evaluation materials for using [Ziggy-Pydust](https://github.com/spiraldb/ziggy-pydust) instead of manual ctypes wrappers.
+
+**Features:**
+- Comparison of ctypes vs Pydust approaches
+- Example Zig code using Pydust's comptime registration
+- Mock-based tests demonstrating the cleaner Pydust API
+- Detailed evaluation report with trade-offs analysis
+- Configuration examples for Poetry/maturin integration
+
+**Key Benefits of Pydust:**
+- No manual `export fn` wrappers needed
+- No ctypes.Structure definitions required
+- Direct method calls on Zig structs
+- Named function arguments
+- Automatic type conversion
+
+See `pydust_poc/README.md` and `pydust_poc/EVALUATION.md` for detailed documentation.
+
 ### factory_demo
 
 Demonstrates PZSpec's factory framework with Zig comptime generics.

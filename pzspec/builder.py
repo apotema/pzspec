@@ -8,8 +8,9 @@ manual build scripts.
 import os
 import subprocess
 import platform
+import importlib.resources
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import json
 
 
@@ -71,6 +72,39 @@ class PZSpecConfig:
         """Get build output directory."""
         build_dir = self.get("build_dir", "zig-out/lib")
         return self.project_root / build_dir
+
+    @property
+    def auto_export(self) -> bool:
+        """Whether to use pzspec_exports.zig for automatic FFI exports."""
+        return self.get("auto_export", False)
+
+    @property
+    def export_prefix(self) -> str:
+        """Prefix for auto-exported function names."""
+        return self.get("export_prefix", "")
+
+
+def get_pzspec_exports_path() -> Path:
+    """Get the path to the bundled pzspec_exports.zig file."""
+    # Try to find it relative to this module
+    module_dir = Path(__file__).parent
+    zig_dir = module_dir / "zig"
+    exports_file = zig_dir / "pzspec_exports.zig"
+
+    if exports_file.exists():
+        return exports_file
+
+    # Fallback: try importlib.resources for installed packages
+    try:
+        with importlib.resources.files("pzspec.zig").joinpath("pzspec_exports.zig") as p:
+            return Path(p)
+    except (TypeError, FileNotFoundError):
+        pass
+
+    raise FileNotFoundError(
+        "Could not find pzspec_exports.zig. "
+        "Please ensure PZSpec is properly installed."
+    )
 
 
 class ZigBuilder:
@@ -193,6 +227,84 @@ class ZigBuilder:
         """Get the path to the built library."""
         if self.library_exists():
             return self._get_library_path()
+        return None
+
+    def get_metadata_path(self) -> Path:
+        """Get the path to the metadata JSON file."""
+        return self.config.build_dir / f"{self.config.library_name}.pzspec.json"
+
+    def extract_metadata(self) -> Optional[Dict[str, Any]]:
+        """
+        Extract function metadata from the built library.
+
+        If the library was built with pzspec_exports.zig and export_metadata=true,
+        this will call the __pzspec_metadata function to get type information.
+
+        Returns:
+            Dictionary with function metadata, or None if not available.
+        """
+        import ctypes
+
+        lib_path = self.get_library_path()
+        if not lib_path:
+            return None
+
+        try:
+            lib = ctypes.CDLL(str(lib_path))
+
+            # Try to get the metadata function
+            prefix = self.config.export_prefix
+            metadata_fn_name = f"{prefix}__pzspec_metadata"
+
+            try:
+                metadata_fn = getattr(lib, metadata_fn_name)
+                metadata_fn.restype = ctypes.c_char_p
+                metadata_fn.argtypes = []
+
+                result = metadata_fn()
+                if result:
+                    metadata_json = result.decode('utf-8')
+                    return json.loads(metadata_json)
+            except (AttributeError, OSError):
+                # Metadata function not found - library wasn't built with auto-export
+                pass
+
+        except OSError:
+            pass
+
+        return None
+
+    def save_metadata(self) -> bool:
+        """
+        Extract and save metadata to a JSON file.
+
+        Returns:
+            True if metadata was saved, False otherwise.
+        """
+        metadata = self.extract_metadata()
+        if metadata:
+            metadata_path = self.get_metadata_path()
+            metadata_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(metadata_path, 'w') as f:
+                json.dump(metadata, f, indent=2)
+            print(f"✓ Saved metadata: {metadata_path}")
+            return True
+        return False
+
+    def load_metadata(self) -> Optional[Dict[str, Any]]:
+        """
+        Load metadata from the JSON file.
+
+        Returns:
+            Dictionary with function metadata, or None if not available.
+        """
+        metadata_path = self.get_metadata_path()
+        if metadata_path.exists():
+            try:
+                with open(metadata_path, 'r') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
         return None
 
 

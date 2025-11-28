@@ -7,7 +7,8 @@ for Zig code using FFI (Foreign Function Interface).
 
 from .test_runner import TestRunner, TestSuite
 from .zig_ffi import ZigLibrary
-from .builder import ZigBuilder, PZSpecConfig, auto_build
+from .builder import ZigBuilder, PZSpecConfig, auto_build, get_pzspec_exports_path
+from .zig_ffi import parse_zig_type, ZIG_TO_CTYPES
 from .factory import (
     StructFactory,
     factory_field,
@@ -55,6 +56,13 @@ from .sentinel import (
     NO_INDEX,
     INVALID_ID,
 )
+from .pydust import (
+    PydustModule,
+    PydustModuleNotFoundError,
+    try_import_pydust_module,
+    is_pydust_available,
+    skip_if_no_pydust,
+)
 
 # CLI is available but not exported by default
 # Access via: from pzspec.cli import main
@@ -66,6 +74,9 @@ __all__ = [
     "ZigBuilder",
     "PZSpecConfig",
     "auto_build",
+    "get_pzspec_exports_path",
+    "parse_zig_type",
+    "ZIG_TO_CTYPES",
     "StructFactory",
     "factory_field",
     "sequence",
@@ -103,6 +114,12 @@ __all__ = [
     "NO_ENTITY",
     "NO_INDEX",
     "INVALID_ID",
+    # Pydust integration
+    "PydustModule",
+    "PydustModuleNotFoundError",
+    "try_import_pydust_module",
+    "is_pydust_available",
+    "skip_if_no_pydust",
 ]
 
 __version__ = "0.1.0"

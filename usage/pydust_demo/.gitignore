@@ -1,0 +1,17 @@
+# Pydust build artifacts
+.zig-cache/
+zig-cache/
+zig-out/
+*.so
+*.dylib
+build.zig
+pydust.build.zig
+pydust/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# PZSpec snapshots
+pzspec/__snapshots__/

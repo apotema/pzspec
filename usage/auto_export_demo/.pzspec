@@ -1,0 +1,5 @@
+{
+  "library_name": "auto_export_demo",
+  "source_file": "src/lib.zig",
+  "auto_export": true
+}

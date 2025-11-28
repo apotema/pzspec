@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "pydust-demo"
+version = "0.1.0"
+description = "Demo of using Ziggy-Pydust with PZSpec for Zig testing"
+authors = ["PZSpec <pzspec@example.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+[tool.poetry.group.dev.dependencies]
+ziggy-pydust = "^0.26.0"
+pzspec = { path = "../..", develop = true }
+
+[build-system]
+requires = ["poetry-core", "ziggy-pydust==0.26.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pydust]
+zig_exe = "~/.zvm/bin/zig"
+
+# Define the Zig modules to build
+[[tool.pydust.ext_module]]
+name = "mathlib"
+root = "src/mathlib.zig"
+limited_api = true
