@@ -66,20 +66,14 @@ comptime {
    pip install -e ../..  # Install pzspec from parent
    ```
 
-3. Copy the ffi.h file for translate-c:
-   ```bash
-   mkdir -p pydust/src
-   cp .venv/lib/python*/site-packages/pydust/src/ffi.h pydust/src/
-   ```
-
-4. Build the Zig module:
+3. Build the Zig module:
    ```bash
    python3 build.py
    ```
 
-5. Run tests:
+4. Run tests:
    ```bash
-   python3 test_pydust_mathlib.py
+   pzspec
    ```
 
 ## Requirements
